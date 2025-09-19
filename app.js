@@ -240,7 +240,8 @@ function renderSummaryAndSvg(result) {
     else if (t.side === 'starboard') groupMap[key].starboard = t;
     else if (t.side === 'center') groupMap[key].centers.push(t);
   });
-  const orderedKeys = rowKeys.filter(k => k !== 'SLOP').concat(rowKeys.filter(k => k === 'SLOP'));
+  // Respect editor order entirely (including SLOP); do not reorder
+  const orderedKeys = rowKeys;
 
   const byTank = Object.create(null);
   allocations.forEach(a => { byTank[a.tank_id] = a; });
