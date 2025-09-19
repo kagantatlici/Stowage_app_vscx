@@ -30,7 +30,8 @@ const variantSelect = document.getElementById('plan-variant');
 
 // Local storage helpers for configs and last state
 const LS_PRESETS = 'stowage_presets_v1';
-const LS_LAST = 'stowage_last_v1';
+// Bump last-state key to avoid overriding new defaults with old cached state
+const LS_LAST = 'stowage_last_v2';
 
 function loadPresets() {
   try { return JSON.parse(localStorage.getItem(LS_PRESETS) || '{}'); } catch { return {}; }
@@ -113,7 +114,7 @@ function renderParcelEditor() {
     return `<tr>
       <td><input value="${p.id}" data-idx="${idx}" data-field="id" style="width:70px"/></td>
       <td><input value="${p.name}" data-idx="${idx}" data-field="name" style="width:120px"/></td>
-      <td><input type="number" step="1" min="0" value="${p.total_m3 ?? ''}" data-idx="${idx}" data-field="total_m3" style="width:90px" ${p.fill_remaining? 'disabled':''}/></td>
+      <td><input type="number" step="0.001" min="0" value="${p.total_m3 != null ? Number(p.total_m3).toFixed(3) : ''}" data-idx="${idx}" data-field="total_m3" style="width:90px" ${p.fill_remaining? 'disabled':''}/></td>
       <td><input type="checkbox" ${p.fill_remaining?'checked':''} data-idx="${idx}" data-field="fill_remaining" ${idx===parcels.length-1 ? '' : 'disabled'}/></td>
       <td><input type="number" step="0.001" min="0" value="${((p.density_kg_m3||0)/1000).toFixed(3)}" data-idx="${idx}" data-field="density_g_cm3" style="width:80px"/></td>
       <td><input type="number" step="1" value="${p.temperature_c}" data-idx="${idx}" data-field="temperature_c" style="width:70px"/></td>
@@ -142,7 +143,10 @@ function renderParcelEditor() {
         const gcm3 = Number(txt);
         val = isNaN(gcm3) ? parcels[idx].density_kg_m3 : gcm3 * 1000;
       }
-      if (field === 'total_m3') val = val === '' ? undefined : Number(val);
+      if (field === 'total_m3') {
+        const txt = String(val).replace(',', '.');
+        val = txt === '' ? undefined : Number(txt);
+      }
       // Ensure unique parcel IDs; auto-adjust duplicates
       if (field === 'id') {
         let base = String(val).trim() || `P${idx+1}`;
