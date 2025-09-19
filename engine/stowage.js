@@ -267,6 +267,7 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
   const n = orderedPairs.length;
   // Try even k: choose subset that minimizes locked capacity (sum Cmax of chosen subset)
   let globalBest = null; // track across all p if mode==='min_locked_global'
+  const feasibles = [];   // collect all feasible candidates for 'max_k'
   for (let p = 1; p <= n; p++) {
     let best = null; // {sCmax, pickedPositions, pickedIdxs}
     for (const idxs of combos(n, p)) {
@@ -296,6 +297,7 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
       }
     }
     if (best) {
+      feasibles.push({ chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, sCmax: best.sCmax });
       if (mode === 'min_k') {
         return { chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, k_low, k_high, parity_adjustment: 'none', reason: 'non-uniform: minimal locked capacity subset' };
       }
@@ -314,6 +316,7 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
       const redC = bandAllowed ? Math.max(0, c.volume_m3 * (c.min_pct - bandMinPct)) : 0;
       if ((V + 1e-9 >= cmin && V <= cmax + 1e-9) || (bandAllowed && V + 1e-9 >= (cmin - redC) && V <= cmax + 1e-9)) {
         const cand = { chosen_k: 1, reservedPairs: [], center: c, k_low, k_high, parity_adjustment: 'odd_with_center', reason: 'non-uniform: feasible with center only', sCmax: cmax };
+        feasibles.push(cand);
         if (mode === 'min_k') return cand;
         if (!globalBest || cand.sCmax < globalBest.sCmax || (Math.abs(cand.sCmax - globalBest.sCmax) < 1e-9 && cand.chosen_k < globalBest.chosen_k)) globalBest = cand;
       }
@@ -350,6 +353,7 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
           }
         }
         if (best) {
+          feasibles.push({ chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, sCmax: best.sCmax });
           if (mode === 'min_k') {
             return { chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, k_low, k_high, parity_adjustment: 'odd_with_center', reason: 'non-uniform: minimal locked capacity subset (with center)' };
           }
@@ -360,6 +364,12 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
         }
       }
     }
+  }
+  if (mode === 'max_k' && feasibles.length > 0) {
+    // choose candidate with largest chosen_k; tie-breaker: minimal sCmax
+    feasibles.sort((a,b) => (b.chosen_k - a.chosen_k) || (a.sCmax - b.sCmax));
+    const top = feasibles[0];
+    return { chosen_k: top.chosen_k, reservedPairs: top.reservedPairs, center: top.center || null, k_low, k_high, parity_adjustment: 'none', reason: 'non-uniform: maximum k (spread across more tanks)' };
   }
   if (globalBest) {
     const { sCmax, ...rest } = globalBest;
@@ -951,6 +961,10 @@ export function computePlanSingleWingAlternative(tanks, parcels) {
 
 export function computePlanMinTanksAggressive(tanks, parcels) {
   return computePlanInternal(tanks, parcels, 'min_k', { aggressiveSingleWing: true });
+}
+
+export function computePlanMaxK(tanks, parcels) {
+  return computePlanInternal(tanks, parcels, 'max_k');
 }
 
 /**
