@@ -268,11 +268,21 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
   // Try even k: choose subset that minimizes locked capacity (sum Cmax of chosen subset)
   let globalBest = null; // track across all p if mode==='min_locked_global'
   const feasibles = [];   // collect all feasible candidates for 'max_k'
+  // Precompute F/A normalization parameters once
+  const allIdxs = [...orderedPairs];
+  const cotIdxs = allIdxs.filter(i => i < 1000);
+  const minCot = cotIdxs.length ? Math.min(...cotIdxs) : 0;
+  const maxCot = cotIdxs.length ? Math.max(...cotIdxs) : 0;
+  const normIdx = (i) => (i >= 1000 ? maxCot + 1 : i);
+  const midIdx = (minCot + (maxCot + 1)) / 2;
+
   for (let p = 1; p <= n; p++) {
-    let best = null; // {sCmax, pickedPositions, pickedIdxs}
+    let best = null; // {sCmax, pickedPositions, pickedIdxs, score}
     for (const idxs of combos(n, p)) {
       let sMin = 0, sMax = 0, sCmax = 0, maxReduction = 0;
       const pickedIdxs = [];
+      let fwdCap = 0, aftCap = 0;
+      let idxSetNorm = [];
       for (const pos of idxs) {
         const idx = orderedPairs[pos];
         const pr = pairs[idx];
@@ -281,6 +291,9 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
         sMin += minSum;
         sMax += maxSum;
         sCmax += maxSum;
+        const ni = normIdx(idx);
+        idxSetNorm.push(ni);
+        if (ni < midIdx) fwdCap += maxSum; else if (ni > midIdx) aftCap += maxSum; // center-equivalent ignored
         if (bandAllowed) {
           const redP = pr.port.volume_m3 * (pr.port.min_pct - bandMinPct);
           const redS = pr.starboard.volume_m3 * (pr.starboard.min_pct - bandMinPct);
@@ -291,15 +304,29 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
       const okNoBand = (V + 1e-9 >= sMin) && (V <= sMax + 1e-9);
       const okWithBand = bandAllowed && (V + 1e-9 >= (sMin - maxReduction)) && (V <= sMax + 1e-9);
       if (okNoBand || okWithBand) {
-        if (!best || sCmax < best.sCmax || (Math.abs(sCmax - best.sCmax) < 1e-9 && idxs.join(',') < best.pickedPositions.join(','))) {
-          best = { sCmax, pickedPositions: idxs, pickedIdxs };
+        // dispersion metrics
+        idxSetNorm.sort((a,b)=>a-b);
+        let maxRun = 0; let run = 0; let prev = null;
+        for (const v of idxSetNorm) { if (prev==null || v!==prev+1) run=1; else run++; maxRun = Math.max(maxRun, run); prev=v; }
+        const span = idxSetNorm.length ? (idxSetNorm[idxSetNorm.length-1] - idxSetNorm[0]) : 0;
+        const usesSlop = pickedIdxs.some(i => i >= 1000) ? 1 : 0;
+        const balDiff = Math.abs(fwdCap - aftCap);
+        const score = [
+          balDiff,        // lower is better
+          maxRun,         // lower is better (avoid contiguous blocks)
+          -span,          // higher span preferred
+          -usesSlop,      // prefer using slop (treat as stern-extender)
+          sCmax           // lower locked capacity remains a tie-breaker
+        ];
+        if (!best || scoreLess(score, best.score) || (eqScore(score, best.score) && idxs.join(',') < best.pickedPositions.join(','))) {
+          best = { sCmax, pickedPositions: idxs, pickedIdxs, score };
         }
       }
     }
     if (best) {
       feasibles.push({ chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, sCmax: best.sCmax });
       if (mode === 'min_k') {
-        return { chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, k_low, k_high, parity_adjustment: 'none', reason: 'non-uniform: minimal locked capacity subset' };
+        return { chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, k_low, k_high, parity_adjustment: 'none', reason: 'non-uniform: balanced dispersion subset' };
       }
       const cand = { chosen_k: 2 * p, reservedPairs: best.pickedIdxs, center: null, k_low, k_high, parity_adjustment: 'none', reason: 'non-uniform: minimal locked capacity subset', sCmax: best.sCmax };
       if (!globalBest || cand.sCmax < globalBest.sCmax || (Math.abs(cand.sCmax - globalBest.sCmax) < 1e-9 && cand.chosen_k < globalBest.chosen_k)) {
@@ -325,10 +352,12 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
       const cmin = c.volume_m3 * c.min_pct;
       const cmax = c.volume_m3 * c.max_pct;
       for (let p = 1; p <= n; p++) {
-        let best = null;
+        let best = null; // {sCmax, pickedPositions, pickedIdxs, score}
         for (const idxs of combos(n, p)) {
           let sMin = cmin, sMax = cmax, sCmax = cmax, maxReduction = bandAllowed ? Math.max(0, c.volume_m3 * (c.min_pct - bandMinPct)) : 0;
           const pickedIdxs = [];
+          let fwdCap = 0, aftCap = 0;
+          let idxSetNorm = [];
           for (const pos of idxs) {
             const idx = orderedPairs[pos];
             const pr = pairs[idx];
@@ -337,6 +366,9 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
             sMin += minSum;
             sMax += maxSum;
             sCmax += maxSum;
+            const ni = normIdx(idx);
+            idxSetNorm.push(ni);
+            if (ni < midIdx) fwdCap += maxSum; else if (ni > midIdx) aftCap += maxSum;
             if (bandAllowed) {
               const redP = pr.port.volume_m3 * (pr.port.min_pct - bandMinPct);
               const redS = pr.starboard.volume_m3 * (pr.starboard.min_pct - bandMinPct);
@@ -347,15 +379,22 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
           const okNoBand = (V + 1e-9 >= sMin) && (V <= sMax + 1e-9);
           const okWithBand = bandAllowed && (V + 1e-9 >= (sMin - maxReduction)) && (V <= sMax + 1e-9);
           if (okNoBand || okWithBand) {
-            if (!best || sCmax < best.sCmax || (Math.abs(sCmax - best.sCmax) < 1e-9 && idxs.join(',') < best.pickedPositions.join(','))) {
-              best = { sCmax, pickedPositions: idxs, pickedIdxs };
+            idxSetNorm.sort((a,b)=>a-b);
+            let maxRun = 0; let run = 0; let prev = null;
+            for (const v of idxSetNorm) { if (prev==null || v!==prev+1) run=1; else run++; maxRun = Math.max(maxRun, run); prev=v; }
+            const span = idxSetNorm.length ? (idxSetNorm[idxSetNorm.length-1] - idxSetNorm[0]) : 0;
+            const usesSlop = pickedIdxs.some(i => i >= 1000) ? 1 : 0;
+            const balDiff = Math.abs(fwdCap - aftCap);
+            const score = [ balDiff, maxRun, -span, -usesSlop, sCmax ];
+            if (!best || scoreLess(score, best.score) || (eqScore(score, best.score) && idxs.join(',') < best.pickedPositions.join(','))) {
+              best = { sCmax, pickedPositions: idxs, pickedIdxs, score };
             }
           }
         }
         if (best) {
           feasibles.push({ chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, sCmax: best.sCmax });
           if (mode === 'min_k') {
-            return { chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, k_low, k_high, parity_adjustment: 'odd_with_center', reason: 'non-uniform: minimal locked capacity subset (with center)' };
+            return { chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, k_low, k_high, parity_adjustment: 'odd_with_center', reason: 'non-uniform: balanced dispersion subset (with center)' };
           }
           const cand = { chosen_k: 2 * p + 1, reservedPairs: best.pickedIdxs, center: c, k_low, k_high, parity_adjustment: 'odd_with_center', reason: 'non-uniform: minimal locked capacity subset (with center)', sCmax: best.sCmax };
           if (!globalBest || cand.sCmax < globalBest.sCmax || (Math.abs(cand.sCmax - globalBest.sCmax) < 1e-9 && cand.chosen_k < globalBest.chosen_k)) {
@@ -376,6 +415,19 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
     return rest;
   }
   return { chosen_k: null, reservedPairs: [], center: null, k_low, k_high, parity_adjustment: 'infeasible', reason: 'no feasible k with current non-uniform capacities' };
+}
+
+// Helper tuple comparators for internal scoring
+function scoreLess(a, b) {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (a[i] !== b[i]) return a[i] < b[i];
+  }
+  return a.length < b.length;
+}
+function eqScore(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-9) return false;
+  return true;
 }
 
 /**
