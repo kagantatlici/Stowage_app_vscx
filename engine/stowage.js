@@ -1012,19 +1012,46 @@ export function computePlanMinKAlternatives(tanks, parcels, maxAlts = 5) {
         if (!t) continue;
         cmaxUsed += t.volume_m3 * t.max_pct;
         assignedUsed += a.assigned_m3;
-        const idx = parsePairIndex(t.id) ?? 0;
-        pairWeights.set(idx, (pairWeights.get(idx) || 0) + a.weight_mt);
+        const idxRaw = parsePairIndex(t.id) ?? 0;
+        pairWeights.set(idxRaw, (pairWeights.get(idxRaw) || 0) + a.weight_mt);
       }
       const deadSpace = Math.max(0, cmaxUsed - assignedUsed);
-      // fore/aft balance: weight moment around mean index
-      const idxsUsed = Array.from(pairWeights.keys());
-      const meanIdx = idxsUsed.reduce((s,i)=>s+i,0) / (idxsUsed.length || 1);
-      let faMoment = 0;
-      for (const [idx, wt] of pairWeights.entries()) faMoment += Math.abs((idx - meanIdx) * wt);
-      results.push({ res: r, metrics: { deadSpace, faMoment } });
+      // Normalize indices for F/A metrics: place SLOP at the stern end just after max COT index
+      const cotIdxs = Object.keys(pairs).map(n=>parseInt(n,10)).filter(n => !!pairs[n] && n < 1000);
+      const minCot = Math.min(...cotIdxs);
+      const maxCot = Math.max(...cotIdxs);
+      const norm = (idx) => (idx >= 1000 ? maxCot + 1 : idx);
+      // fwd/aft balance around mid of [minCot..maxCot+1]
+      const mid = (minCot + (maxCot + 1)) / 2;
+      let fwdW = 0, aftW = 0;
+      const usedNormIdxs = [];
+      for (const [idxRaw, wt] of pairWeights.entries()) {
+        const idx = norm(idxRaw);
+        usedNormIdxs.push(idx);
+        if (idx < mid) fwdW += wt; else if (idx > mid) aftW += wt;
+      }
+      const fwdAftDiff = Math.abs(fwdW - aftW);
+      // spread metrics
+      usedNormIdxs.sort((a,b)=>a-b);
+      const span = (usedNormIdxs.length ? (usedNormIdxs[usedNormIdxs.length-1] - usedNormIdxs[0]) : 0);
+      // contiguity: longest consecutive run length (prefer smaller)
+      let maxRun = 0; let run = 0; let prev = null;
+      for (const idx of usedNormIdxs) {
+        if (prev == null || idx !== prev + 1) { run = 1; } else { run++; }
+        if (run > maxRun) maxRun = run;
+        prev = idx;
+      }
+      const usesSlop = usedNormIdxs.some(i => i === maxCot + 1) ? 1 : 0;
+      results.push({ res: r, metrics: { deadSpace, fwdAftDiff, span, maxRun, usesSlop } });
     }
   }
-  results.sort((a,b) => (a.metrics.deadSpace - b.metrics.deadSpace) || (a.metrics.faMoment - b.metrics.faMoment));
+  results.sort((a,b) =>
+    (b.metrics.usesSlop - a.metrics.usesSlop) ||
+    (a.metrics.fwdAftDiff - b.metrics.fwdAftDiff) ||
+    (a.metrics.deadSpace - b.metrics.deadSpace) ||
+    (a.metrics.maxRun - b.metrics.maxRun) ||
+    (b.metrics.span - a.metrics.span)
+  );
   return results.slice(0, maxAlts).map(x => x.res);
 }
 
