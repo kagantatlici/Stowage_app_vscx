@@ -304,6 +304,10 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
       const okNoBand = (V + 1e-9 >= sMin) && (V <= sMax + 1e-9);
       const okWithBand = bandAllowed && (V + 1e-9 >= (sMin - maxReduction)) && (V <= sMax + 1e-9);
       if (okNoBand || okWithBand) {
+        // Hard rule: forbid contiguous midship-only blocks when extreme big pairs are idle (exclude SLOPs)
+        if (isMidOnlyContiguousBlock(pickedIdxs, minCot, maxCot)) {
+          continue;
+        }
         // dispersion metrics
         idxSetNorm.sort((a,b)=>a-b);
         let maxRun = 0; let run = 0; let prev = null;
@@ -379,6 +383,9 @@ function chooseK_nonuniform(V, orderedPairs, pairs, freeCenters, mode = 'min_k',
           const okNoBand = (V + 1e-9 >= sMin) && (V <= sMax + 1e-9);
           const okWithBand = bandAllowed && (V + 1e-9 >= (sMin - maxReduction)) && (V <= sMax + 1e-9);
           if (okNoBand || okWithBand) {
+            if (isMidOnlyContiguousBlock(pickedIdxs, minCot, maxCot)) {
+              continue;
+            }
             idxSetNorm.sort((a,b)=>a-b);
             let maxRun = 0; let run = 0; let prev = null;
             for (const v of idxSetNorm) { if (prev==null || v!==prev+1) run=1; else run++; maxRun = Math.max(maxRun, run); prev=v; }
@@ -428,6 +435,23 @@ function eqScore(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-9) return false;
   return true;
+}
+
+// Return true if picked pair indices form a contiguous block strictly inside [minCot..maxCot]
+// i.e., no gap between min(selected)..max(selected), and neither extreme (minCot or maxCot) is selected.
+function isMidOnlyContiguousBlock(pickedIdxs, minCot, maxCot) {
+  const cot = pickedIdxs.filter(i => i < 1000);
+  if (cot.length === 0) return false;
+  const set = new Set(cot);
+  const minSel = Math.min(...cot);
+  const maxSel = Math.max(...cot);
+  // contiguous?
+  for (let i = minSel; i <= maxSel; i++) {
+    if (!set.has(i)) return false;
+  }
+  // strictly inside extremes?
+  if (minSel > minCot && maxSel < maxCot) return true;
+  return false;
 }
 
 /**
@@ -1045,7 +1069,11 @@ export function computePlanMinKAlternatives(tanks, parcels, maxAlts = 5) {
   const results = [];
   const seenSig = new Set();
   const centersList = useCenter ? [...centers] : [null];
+  const cotIdxs = Object.keys(pairs).map(n => parseInt(n,10)).filter(n => !!pairs[n] && n < 1000);
+  const minCot = cotIdxs.length ? Math.min(...cotIdxs) : 0;
+  const maxCot = cotIdxs.length ? Math.max(...cotIdxs) : 0;
   for (const idxs of combos(orderedPairs, pCount)) {
+    if (isMidOnlyContiguousBlock(idxs, minCot, maxCot)) continue;
     for (const c of centersList) {
       const policy = { forcedSelection: { [p0.id]: { reservedPairs: idxs, center: c ? c.id : null } } };
       const r = computePlanInternal(tanks, parcels, 'min_k', policy);
