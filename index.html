@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tanker Stowage Planner (MVP)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Tanker Stowage Planner — MVP</h1>
+      <div class="actions">
+        <button id="btn-compute">Compute Plan</button>
+      </div>
+    </header>
+    <main class="container">
+      <section class="panel">
+        <h2>Tank Editor</h2>
+        <div id="tank-editor"></div>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+          <button id="btn-add-center">Add Center Tank</button>
+        </div>
+        <div style="margin-top:10px; border-top:1px solid #1b254a; padding-top:10px;">
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <strong style="font-size:13px; color:#9aa3b2;">Ship Configs</strong>
+            <input id="cfg-name" placeholder="e.g. Ship No. 1" style="min-width:180px;" />
+            <button id="btn-save-cfg">Save Config</button>
+            <select id="cfg-select" style="min-width:180px;"></select>
+            <button id="btn-load-cfg">Load</button>
+            <button id="btn-del-cfg">Delete</button>
+          </div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Cargo Input</h2>
+        <div id="parcel-editor"></div>
+        <div class="parcel-actions">
+          <button id="btn-add-parcel">Add Parcel</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Distribution Result</h2>
+        <div id="summary"></div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+          <button id="btn-export-json">Export JSON</button>
+          <label for="plan-variant" style="color:#9aa3b2; font-size:13px;">Plan Options</label>
+          <select id="plan-variant" style="min-width:220px;"></select>
+        </div>
+        <div id="layout-grid" class="layout-wrap"></div>
+        <div id="svg-container" class="svg-wrap" style="display:none;"></div>
+        <div id="warnings" class="warn"></div>
+        <!-- Reasoning trace hidden in UI -->
+        
+        <hr style="border: none; border-top: 1px solid #1b254a; margin: 12px 0;" />
+        <h3 style="margin:8px 0; font-size:14px;">Allocated Tanks</h3>
+        <div id="alloc-table"></div>
+        <h3 style="margin:12px 0 8px; font-size:14px;">Parcels Summary</h3>
+        <div id="parcel-table"></div>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+  </html>
