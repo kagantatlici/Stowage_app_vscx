@@ -65,8 +65,10 @@
  */
 export function parsePairIndex(id) {
   const m = /COT(\d+)/i.exec(id);
-  if (!m) return null;
-  return parseInt(m[1], 10);
+  if (m) return parseInt(m[1], 10);
+  // Treat SLOPP/SLOPS as a symmetric pair with a synthetic index
+  if (/^SLOPP$/i.test(id) || /^SLOPS$/i.test(id)) return 1000;
+  return null;
 }
 
 /**
