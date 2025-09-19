@@ -3,7 +3,7 @@ import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining,
 // Simple state
 let tanks = buildDefaultTanks();
 let parcels = [
-  { id: 'P1', name: 'naphtha', total_m3: 42288.300, density_kg_m3: 710, temperature_c: 20, color: '#ef4444' }
+  { id: 'P1', name: 'naphtha', total_m3: 42288.300, density_kg_m3: 710, temperature_c: 15, color: '#ef4444' }
 ];
 
 // UI helpers
@@ -222,17 +222,21 @@ function renderSummaryAndSvg(result) {
   }
 
   // Larger, card-like ship layout (HTML/CSS)
+  // Respect the order in the tank editor (array order), and place SLOP tanks at the bottom.
   const includedTanks = tanks.filter(t => t.included);
-  const pairMap = {};
+  /** @type {Record<string, {port:any, starboard:any, centers:any[]}>} */
+  const groupMap = {};
+  /** @type {string[]} */
+  const rowKeys = [];
   includedTanks.forEach(t => {
     const m = /COT(\d+)/.exec(t.id);
-    const idx = m ? Number(m[1]) : 0;
-    if (!pairMap[idx]) pairMap[idx] = { port: null, starboard: null, centers: [] };
-    if (t.side === 'port') pairMap[idx].port = t;
-    else if (t.side === 'starboard') pairMap[idx].starboard = t;
-    else if (t.side === 'center') pairMap[idx].centers.push(t);
+    const key = m ? `PAIR:${m[1]}` : (/SLOP/i.test(t.id) ? 'SLOP' : `OTHER:${t.id}`);
+    if (!groupMap[key]) { groupMap[key] = { port: null, starboard: null, centers: [] }; rowKeys.push(key); }
+    if (t.side === 'port') groupMap[key].port = t;
+    else if (t.side === 'starboard') groupMap[key].starboard = t;
+    else if (t.side === 'center') groupMap[key].centers.push(t);
   });
-  const pairIndices = Object.keys(pairMap).map(n => Number(n)).sort((a,b)=>a-b);
+  const orderedKeys = rowKeys.filter(k => k !== 'SLOP').concat(rowKeys.filter(k => k === 'SLOP'));
 
   const byTank = Object.create(null);
   allocations.forEach(a => { byTank[a.tank_id] = a; });
@@ -245,12 +249,12 @@ function renderSummaryAndSvg(result) {
     <div class="stern"></div>
   `;
   const hull = ship.querySelector('#hull');
-  pairIndices.forEach(idx => {
+  orderedKeys.forEach(key => {
     const row = document.createElement('div');
     row.className = 'tank-row';
-    const hasCenter = pairMap[idx].centers && pairMap[idx].centers.length > 0;
-    const port = pairMap[idx].port;
-    const star = pairMap[idx].starboard;
+    const hasCenter = groupMap[key].centers && groupMap[key].centers.length > 0;
+    const port = groupMap[key].port;
+    const star = groupMap[key].starboard;
     const centerOnly = hasCenter && !port && !star;
     if (centerOnly) {
       row.style.display = 'grid';
@@ -285,7 +289,7 @@ function renderSummaryAndSvg(result) {
     }
     // Center cell(s) if any
     if (hasCenter) {
-      const centers = pairMap[idx].centers.sort((a,b)=>a.id.localeCompare(b.id));
+      const centers = groupMap[key].centers.sort((a,b)=>a.id.localeCompare(b.id));
       const cellC = document.createElement('div');
       cellC.className = 'tank-cell';
       if (centerOnly) {
@@ -404,8 +408,8 @@ function renderSummaryAndSvg(result) {
     const deadSpace = Math.max(0, cmaxUsed - assignedUsed);
     // Free symmetric pair capacity
     let freePairCap = 0;
-    Object.keys(pairMap).forEach(k => {
-      const pr = pairMap[k];
+    orderedKeys.filter(k => k.startsWith('PAIR:')).forEach(k => {
+      const pr = groupMap[k];
       if (pr.port && pr.starboard && !used.has(pr.port.id) && !used.has(pr.starboard.id)) {
         freePairCap += pr.port.volume_m3 * pr.port.max_pct + pr.starboard.volume_m3 * pr.starboard.max_pct;
       }
@@ -568,7 +572,7 @@ btnAddParcel.addEventListener('click', () => {
   // Ensure only the last parcel can be fill_remaining
   parcels = parcels.map((p, i) => i === parcels.length - 1 ? p : { ...p, fill_remaining: false });
   const idx = parcels.length + 1;
-  parcels.push({ id: `P${idx}`, name: `Parcel ${idx}`, total_m3: 0, density_kg_m3: 800, temperature_c: 20, color: '#a855f7' });
+  parcels.push({ id: `P${idx}`, name: `Parcel ${idx}`, total_m3: 0, density_kg_m3: 800, temperature_c: 15, color: '#a855f7' });
   persistLastState();
   render();
 });
