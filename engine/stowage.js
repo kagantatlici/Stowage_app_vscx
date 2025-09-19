@@ -957,15 +957,29 @@ export function computePlanMinTanksAggressive(tanks, parcels) {
  * @returns {Tank[]}
  */
 export function buildDefaultTanks() {
-  const out = [];
+  // Custom default per user request: 5 pairs + slops with specific volumes
   const min_pct = 0.5;
   const max_pct = 0.98;
-  const volume_m3 = 1000;
-  for (let i = 1; i <= 4; i++) {
-    out.push({ id: `COT${i}P`, volume_m3, min_pct, max_pct, included: true, side: 'port' });
-    out.push({ id: `COT${i}S`, volume_m3, min_pct, max_pct, included: true, side: 'starboard' });
-  }
-  return out;
+  return [
+    // Pair 1
+    { id: 'COT1P', volume_m3: 3100.7, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'COT1S', volume_m3: 3113.1, min_pct, max_pct, included: true, side: 'starboard' },
+    // Pair 2
+    { id: 'COT2P', volume_m3: 4882.8, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'COT2S', volume_m3: 4882.8, min_pct, max_pct, included: true, side: 'starboard' },
+    // Pair 3
+    { id: 'COT3P', volume_m3: 4806.5, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'COT3S', volume_m3: 4813.0, min_pct, max_pct, included: true, side: 'starboard' },
+    // Pair 4
+    { id: 'COT4P', volume_m3: 4944.7, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'COT4S', volume_m3: 4965.7, min_pct, max_pct, included: true, side: 'starboard' },
+    // Pair 5
+    { id: 'COT5P', volume_m3: 3434.6, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'COT5S', volume_m3: 3431.0, min_pct, max_pct, included: true, side: 'starboard' },
+    // Slops as small wing tanks
+    { id: 'SLOPP', volume_m3: 156.4, min_pct, max_pct, included: true, side: 'port' },
+    { id: 'SLOPS', volume_m3: 156.2, min_pct, max_pct, included: true, side: 'starboard' },
+  ];
 }
 
 /**
