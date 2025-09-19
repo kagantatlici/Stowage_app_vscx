@@ -482,8 +482,11 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     const freeCenters = centers.filter(c => !usedCenters.has(c.id));
     const isSmallParcel = V > 0 && V <= bufferSmallThreshold;
     const freePairsNoBuffer = freePairsAll.filter(idx => !bufferPairs.has(idx));
-    // Non-uniform selection with buffer preference and band awareness
-    let selection = chooseK_nonuniform(V, isSmallParcel ? freePairsAll : freePairsNoBuffer, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
+    // Non-uniform selection with buffer preference and band awareness, unless forced selection is provided
+    const forcedSel = policy.forcedSelection && policy.forcedSelection[p.id];
+    let selection = forcedSel
+      ? { chosen_k: (forcedSel.center ? forcedSel.reservedPairs.length * 2 + 1 : forcedSel.reservedPairs.length * 2), reservedPairs: forcedSel.reservedPairs, center: forcedSel.center ? freeCenters.find(c=>c.id===forcedSel.center) || null : null, k_low: 0, k_high: 0, parity_adjustment: 'none', reason: 'forced selection' }
+      : chooseK_nonuniform(V, isSmallParcel ? freePairsAll : freePairsNoBuffer, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
     let releasedBuffer = false;
     if ((!selection.chosen_k || selection.chosen_k === null) && !isSmallParcel && bufferPairs.size > 0) {
       selection = chooseK_nonuniform(V, freePairsAll, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
@@ -512,7 +515,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
 
     // H1 preference: if objective is min_k and parcel is larger than the small-threshold,
     // prefer a single-wing load (with ballast advisory) when it reduces tank count
-    if (mode === 'min_k' && (((p.total_m3 ?? 0) > bufferSmallThreshold) || aggressiveSingleWing) && (selection.chosen_k ?? 0) >= 2) {
+    if (!forcedSel && mode === 'min_k' && (((p.total_m3 ?? 0) > bufferSmallThreshold) || aggressiveSingleWing) && (selection.chosen_k ?? 0) >= 2) {
       const usedTankIdsPref = new Set(allocations.map(a => a.tank_id));
       const singlePref = included
         .filter(t => t.included && t.side !== 'center' && !usedTankIdsPref.has(t.id))
@@ -565,7 +568,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     }
 
     // Wing alternative even if center exists (for offering single-wing option)
-    if (preferWingEvenIfCenter && (selection.chosen_k ?? 0) === 1 && selection.center) {
+    if (!forcedSel && preferWingEvenIfCenter && (selection.chosen_k ?? 0) === 1 && selection.center) {
       const usedTankIdsPref = new Set(allocations.map(a => a.tank_id));
       const singlePref2 = included
         .filter(t => t.included && t.side !== 'center' && !usedTankIdsPref.has(t.id))
@@ -617,7 +620,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
       }
     }
 
-    if (!chosen_k) {
+    if (!forcedSel && !chosen_k) {
       // Fallback: allow a single wing tank (unsymmetrical) if parcel fits per-tank min/max.
       // This introduces list; operator must ballast the opposite side. We emit a clear warning.
       const usedTankIds = new Set(allocations.map(a => a.tank_id));
@@ -965,6 +968,64 @@ export function computePlanMinTanksAggressive(tanks, parcels) {
 
 export function computePlanMaxK(tanks, parcels) {
   return computePlanInternal(tanks, parcels, 'max_k');
+}
+
+// Enumerate alternative minimal-k plans: returns up to maxAlts results with different pair selections.
+export function computePlanMinKAlternatives(tanks, parcels, maxAlts = 5) {
+  // Current implementation supports the common case with one fixed (non-remaining) parcel.
+  const { pairs, centers, included } = groupTanks(tanks);
+  const fixed = parcels.filter(p => !p.fill_remaining);
+  if (fixed.length === 0) return [];
+  const p0 = fixed[0];
+  const V = p0.total_m3 ?? 0;
+  const pairIndices = Object.keys(pairs).map(n => parseInt(n, 10)).filter(n => !!pairs[n]);
+  const orderedPairs = middleOutOrder(pairIndices);
+  // Determine minimal k using the existing selector
+  const sel = chooseK_nonuniform(V, orderedPairs, pairs, centers, 'min_k', {});
+  if (!sel.chosen_k) return [];
+  const pCount = sel.chosen_k % 2 === 0 ? sel.chosen_k / 2 : (sel.chosen_k - 1) / 2;
+  const useCenter = sel.chosen_k % 2 === 1;
+  // Generate combinations of orderedPairs of size pCount
+  function* combos(arr, k, start = 0, prefix = []) {
+    if (k === 0) { yield prefix; return; }
+    for (let i = start; i <= arr.length - k; i++) yield* combos(arr, k - 1, i + 1, prefix.concat(arr[i]));
+  }
+  const results = [];
+  const seenSig = new Set();
+  const centersList = useCenter ? [...centers] : [null];
+  for (const idxs of combos(orderedPairs, pCount)) {
+    for (const c of centersList) {
+      const policy = { forcedSelection: { [p0.id]: { reservedPairs: idxs, center: c ? c.id : null } } };
+      const r = computePlanInternal(tanks, parcels, 'min_k', policy);
+      const diag = r.diagnostics || {};
+      if ((diag.errors && diag.errors.length) || !r.allocations || r.allocations.length === 0) continue;
+      // Signature for dedupe
+      const sig = r.allocations.map(a => `${a.tank_id}:${a.parcel_id}:${a.assigned_m3.toFixed(3)}`).sort().join('|');
+      if (seenSig.has(sig)) continue;
+      seenSig.add(sig);
+      // Metrics: dead space and fore/aft moment
+      const usedTankIds = new Set(r.allocations.map(a => a.tank_id));
+      let cmaxUsed = 0, assignedUsed = 0;
+      const pairWeights = new Map();
+      for (const a of r.allocations) {
+        const t = included.find(tt => tt.id === a.tank_id);
+        if (!t) continue;
+        cmaxUsed += t.volume_m3 * t.max_pct;
+        assignedUsed += a.assigned_m3;
+        const idx = parsePairIndex(t.id) ?? 0;
+        pairWeights.set(idx, (pairWeights.get(idx) || 0) + a.weight_mt);
+      }
+      const deadSpace = Math.max(0, cmaxUsed - assignedUsed);
+      // fore/aft balance: weight moment around mean index
+      const idxsUsed = Array.from(pairWeights.keys());
+      const meanIdx = idxsUsed.reduce((s,i)=>s+i,0) / (idxsUsed.length || 1);
+      let faMoment = 0;
+      for (const [idx, wt] of pairWeights.entries()) faMoment += Math.abs((idx - meanIdx) * wt);
+      results.push({ res: r, metrics: { deadSpace, faMoment } });
+    }
+  }
+  results.sort((a,b) => (a.metrics.deadSpace - b.metrics.deadSpace) || (a.metrics.faMoment - b.metrics.faMoment));
+  return results.slice(0, maxAlts).map(x => x.res);
 }
 
 /**

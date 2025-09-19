@@ -1,4 +1,4 @@
-import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining, computePlanMinTanksAggressive, computePlanSingleWingAlternative, computePlanMaxK } from './engine/stowage.js';
+import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining, computePlanMinTanksAggressive, computePlanSingleWingAlternative, computePlanMaxK, computePlanMinKAlternatives } from './engine/stowage.js';
 
 // Simple state
 let tanks = buildDefaultTanks();
@@ -487,12 +487,18 @@ function computeVariants() {
   const vAgg = computePlanMinTanksAggressive(tanks, parcels);
   const vWing = computePlanSingleWingAlternative(tanks, parcels);
   const vSpread = computePlanMaxK(tanks, parcels);
+  const altList = computePlanMinKAlternatives(tanks, parcels, 5);
   return {
     min_k: { id: 'Min Tanks', res: vMin },
     max_remaining: { id: 'Max Remaining', res: vMax },
     min_k_aggressive: { id: 'Min Tanks (Aggressive)', res: vAgg },
     single_wing: { id: 'Single-Wing (Ballast)', res: vWing },
-    max_k: { id: 'Spread (Max Wings)', res: vSpread }
+    max_k: { id: 'Spread (Max Wings)', res: vSpread },
+    // Alternatives at same minimal k
+    ...Object.fromEntries(altList.map((r, i) => [
+      `min_k_alt_${i+1}`,
+      { id: `Min Tanks — Alt ${i+1}`, res: r }
+    ]))
   };
 }
 
@@ -504,7 +510,8 @@ function fillVariantSelect() {
   function tankCount(res) {
     return new Set(res.allocations.map(a => a.tank_id)).size;
   }
-  const order = ['min_k','single_wing','min_k_aggressive','max_remaining','max_k'];
+  const baseOrder = ['min_k','min_k_alt_1','min_k_alt_2','min_k_alt_3','min_k_alt_4','min_k_alt_5','single_wing','min_k_aggressive','max_remaining','max_k'];
+  const order = baseOrder.filter(k => k in variantsCache).concat(Object.keys(variantsCache).filter(k => !baseOrder.includes(k)));
   const seen = new Map();
   const entries = [];
   for (const key of order) {
