@@ -3,7 +3,7 @@ import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining,
 // Simple state
 let tanks = buildDefaultTanks();
 let parcels = [
-  { id: 'P1', name: 'naphtha', total_m3: 42288.300, density_kg_m3: 710, temperature_c: 15, color: '#ef4444' }
+  { id: 'P1', name: 'naphtha', total_m3: 41000.000, density_kg_m3: 710, temperature_c: 15, color: '#ef4444' }
 ];
 
 // UI helpers
