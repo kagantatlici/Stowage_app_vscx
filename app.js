@@ -641,11 +641,22 @@ btnDelCfg.addEventListener('click', () => {
 
 // Export current scenario (tanks + parcels + computed plan)
 btnExportJson.addEventListener('click', async () => {
-  const data = { tanks, parcels, result: computePlan(tanks, parcels) };
+  // Export all plan options in one click
+  if (!variantsCache) variantsCache = computeVariants();
+  const plans = {};
+  Object.entries(variantsCache).forEach(([key, entry]) => {
+    const { id, res } = entry;
+    plans[key] = {
+      label: id,
+      allocations: res.allocations || [],
+      diagnostics: res.diagnostics || null
+    };
+  });
+  const data = { tanks, parcels, plans };
   const text = JSON.stringify(data, null, 2);
   try {
     await navigator.clipboard.writeText(text);
-    alert('Copied plan JSON to clipboard. Paste it here.');
+    alert('Copied ALL plan options JSON to clipboard.');
   } catch (e) {
     console.log(text);
     alert('Could not copy automatically. JSON printed to console.');
