@@ -192,7 +192,8 @@ function renderSummaryAndSvg(result) {
   if (summaryEl) summaryEl.innerHTML = '';
   if (svgContainer) svgContainer.innerHTML = '';
   if (layoutGrid) layoutGrid.innerHTML = '';
-  if (warnsEl) warnsEl.textContent = '';
+  // Preserve existing warning text when result is null (e.g., no viable options)
+  if (result) { if (warnsEl) warnsEl.textContent = ''; }
   if (traceEl) traceEl.innerHTML = '';
   if (allocTableEl) allocTableEl.innerHTML = '';
   if (parcelTableEl) parcelTableEl.innerHTML = '';
