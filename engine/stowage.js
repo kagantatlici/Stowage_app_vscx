@@ -486,6 +486,12 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
   const bufferPairsCount = 1; // reserve 1 smallest pair for small parcels
   const aggressiveSingleWing = !!policy.aggressiveSingleWing;
   const preferWingEvenIfCenter = !!policy.preferWingEvenIfCenter;
+  const hardReserveSlopsSmall = !!policy.hardReserveSlopsSmall;
+
+  // Identify SLOP pair index and capacity (synthetic pair index 1000)
+  const slopIdx = 1000;
+  const hasSlops = !!(pairs[slopIdx] && pairs[slopIdx].port && pairs[slopIdx].starboard);
+  const slopsCmax = hasSlops ? (pairs[slopIdx].port.volume_m3 * pairs[slopIdx].port.max_pct + pairs[slopIdx].starboard.volume_m3 * pairs[slopIdx].starboard.max_pct) : 0;
 
   // Partition parcels: fixed first (sort deterministically), then remaining
   const fixed = parcels.filter(p => !p.fill_remaining);
@@ -508,6 +514,15 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     const bKey = JSON.stringify({ v: bV, rho: bR, rem: !!b.fill_remaining, t: b.temperature_c ?? 0 });
     return aKey.localeCompare(bKey);
   });
+
+  // Optionally reserve SLOPs for the smallest parcel that can fully fit in SLOPs
+  let reservedSlopsForParcelId = null;
+  if (hardReserveSlopsSmall && hasSlops) {
+    const eligible = fixedSorted.filter(p => (p.total_m3 ?? 0) > 0 && (p.total_m3 ?? 0) <= slopsCmax);
+    if (eligible.length > 0) {
+      reservedSlopsForParcelId = eligible.reduce((minP, p) => ((p.total_m3 ?? 0) < (minP.total_m3 ?? 0) ? p : minP), eligible[0]).id;
+    }
+  }
 
   // Determine available pair indices and order
   const pairIndices = Object.keys(pairs).map(n => parseInt(n, 10)).filter(n => !!pairs[n]);
@@ -554,9 +569,13 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
   // Fixed parcels ITCP selection and assignment
   for (const p of fixedSorted) {
     const V = p.total_m3 ?? 0;
-    const freePairsAll = getFreePairs();
+    let freePairsAll = getFreePairs();
     const freeCenters = centers.filter(c => !usedCenters.has(c.id));
     const isSmallParcel = V > 0 && V <= bufferSmallThreshold;
+    // Keep SLOPs protected for the designated small parcel
+    if (reservedSlopsForParcelId && p.id !== reservedSlopsForParcelId) {
+      freePairsAll = freePairsAll.filter(idx => idx !== slopIdx);
+    }
     const freePairsNoBuffer = freePairsAll.filter(idx => !bufferPairs.has(idx));
     // Non-uniform selection with buffer preference and band awareness, unless forced selection is provided
     const forcedSel = policy.forcedSelection && policy.forcedSelection[p.id];
@@ -565,10 +584,11 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
       : chooseK_nonuniform(V, isSmallParcel ? freePairsAll : freePairsNoBuffer, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
     let releasedBuffer = false;
     if ((!selection.chosen_k || selection.chosen_k === null) && !isSmallParcel && bufferPairs.size > 0) {
-      selection = chooseK_nonuniform(V, freePairsAll, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
+      const tryPairs = reservedSlopsForParcelId && p.id !== reservedSlopsForParcelId ? freePairsAll.filter(idx => idx !== slopIdx) : freePairsAll;
+      selection = chooseK_nonuniform(V, tryPairs, pairs, freeCenters, mode, { bandMinPct, bandSlotsLeft });
       if (selection.chosen_k) {
         releasedBuffer = true;
-        warnings.push(`Released buffer pairs for parcel ${p.id} to maintain feasibility.`);
+        warnings.push(`Used reserved small-tank capacity to make ${p.name || p.id} fit.`);
       }
     }
     const { k_low, k_high, chosen_k, parity_adjustment, reason } = selection;
@@ -634,10 +654,10 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         if (!cand.fitsStrict && cand.fitsWithBand && bandEnabled && bandSlotsLeft > 0) {
           bandSlotsLeft -= 1;
           bandUsedTankIds.add(t.id);
-          warnings.push(`Underfill band used on ${t.id}: ${(V / t.volume_m3 * 100).toFixed(1)}%`);
+          warnings.push(`Allowed underfill on ${t.id} (${(V / t.volume_m3 * 100).toFixed(1)}%) to fit ${p.name || p.id}.`);
           tr.reason += `; underfill band used on ${t.id}`;
         }
-        warnings.push(`Single-wing load on ${t.id}: ship will list to one side; bring upright by ballasting the opposite side.`);
+        warnings.push(`Single-wing load on ${t.id}. Expect list; ballast the opposite side to correct.`);
         reasoning_trace.push(tr);
         continue;
       }
@@ -687,10 +707,10 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         if (!cand.fitsStrict && cand.fitsWithBand && bandEnabled && bandSlotsLeft > 0) {
           bandSlotsLeft -= 1;
           bandUsedTankIds.add(t.id);
-          warnings.push(`Underfill band used on ${t.id}: ${(V / t.volume_m3 * 100).toFixed(1)}%`);
+          warnings.push(`Allowed underfill on ${t.id} (${(V / t.volume_m3 * 100).toFixed(1)}%) to fit ${p.name || p.id}.`);
           tr.reason += `; underfill band used on ${t.id}`;
         }
-        warnings.push(`Single-wing load on ${t.id}: ship will list to one side; bring upright by ballasting the opposite side.`);
+        warnings.push(`Single-wing load on ${t.id}. Expect list; ballast the opposite side to correct.`);
         reasoning_trace.push(tr);
         continue;
       }
@@ -741,7 +761,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         continue;
       }
       // No single-wing candidate; remain infeasible
-      errors.push(`Parcel ${p.id} infeasible: k range empty or no symmetric capacity`);
+      errors.push(`Parcel ${p.name || p.id} cannot be placed with current tank symmetry and limits.`);
       reasoning_trace.push(traceEntry);
       continue;
     }
@@ -759,7 +779,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     if (chosen_k % 2 === 1) {
       centerTank = selection.center;
       if (!centerTank) {
-        errors.push(`Parcel ${p.id}: odd k requires a center but none available`);
+        errors.push(`Parcel ${p.name || p.id} needs a center tank to keep symmetry, but none is available.`);
         reasoning_trace.push(traceEntry);
         continue;
       }
@@ -799,7 +819,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     if (V + 1e-9 < sumMin || V > sumMax + 1e-9) {
       const minMsg = `minimum required = ${sumMin.toFixed(1)} m³`;
       const maxMsg = `maximum allowed = ${sumMax.toFixed(1)} m³`;
-      errors.push(`Parcel ${p.id}: requested ${V} m³ not within [${minMsg}, ${maxMsg}]. Adjust parcel volume or limits.`);
+      errors.push(`${p.name || p.id}: requested ${V} m³ is outside allowable range [${minMsg}, ${maxMsg}]. Consider adjusting volume or tank limits.`);
       reasoning_trace.push(traceEntry);
       continue;
     }
@@ -825,7 +845,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
     if (bandApplied) {
       bandSlotsLeft -= 1;
       const v = vessels.find(v=>v.tank.id===bandTankId);
-      warnings.push(`Underfill band used on ${bandTankId}: ${(v.vol / v.tank.volume_m3 * 100).toFixed(1)}%`);
+      warnings.push(`Allowed underfill on ${bandTankId} (${(v.vol / v.tank.volume_m3 * 100).toFixed(1)}%) to fit ${p.name || p.id}.`);
       traceEntry.reason += `; underfill band used on ${bandTankId}`;
       bandUsedTankIds.add(bandTankId);
     }
@@ -877,7 +897,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
           if (remLeft + 1e-9 >= bandMinC) {
             v = Math.min(remLeft, maxC);
             bandSlotsLeft -= 1;
-            warnings.push(`Underfill band used on ${c.id}: ${(v / c.volume_m3 * 100).toFixed(1)}%`);
+            warnings.push(`Allowed underfill on ${c.id} (${(v / c.volume_m3 * 100).toFixed(1)}%) to fit remaining cargo.`);
           } else {
             continue;
           }
@@ -964,7 +984,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         const tId = bandOn==='port'?port.id:star.id;
         bandUsedTankIds.add(tId);
         const pct = ( (bandOn==='port'?vPort:vStar) / (bandOn==='port'?port.volume_m3:star.volume_m3) ) * 100;
-        warnings.push(`Underfill band used on ${tId}: ${pct.toFixed(1)}%`);
+        warnings.push(`Allowed underfill on ${tId} (${pct.toFixed(1)}%) to fit remaining cargo.`);
       }
       usedPairs.add(idx);
       reserved.push(`COT${idx}P/S`);
@@ -1044,6 +1064,10 @@ export function computePlanMinTanksAggressive(tanks, parcels) {
 
 export function computePlanMaxK(tanks, parcels) {
   return computePlanInternal(tanks, parcels, 'max_k');
+}
+
+export function computePlanMinKeepSlopsSmall(tanks, parcels) {
+  return computePlanInternal(tanks, parcels, 'min_k', { hardReserveSlopsSmall: true });
 }
 
 // Enumerate alternative minimal-k plans: returns up to maxAlts results with different pair selections.

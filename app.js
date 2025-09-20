@@ -1,4 +1,4 @@
-import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining, computePlanMinTanksAggressive, computePlanSingleWingAlternative, computePlanMinKAlternatives } from './engine/stowage.js';
+import { buildDefaultTanks, buildT10Tanks, computePlan, computePlanMaxRemaining, computePlanMinTanksAggressive, computePlanSingleWingAlternative, computePlanMinKAlternatives, computePlanMinKeepSlopsSmall } from './engine/stowage.js';
 
 // Simple state
 let tanks = buildDefaultTanks();
@@ -486,12 +486,14 @@ function computeVariants() {
   const vMax = computePlanMaxRemaining(tanks, parcels);
   const vAgg = computePlanMinTanksAggressive(tanks, parcels);
   const vWing = computePlanSingleWingAlternative(tanks, parcels);
+  const vKeepSlopsSmall = computePlanMinKeepSlopsSmall(tanks, parcels);
   const altList = computePlanMinKAlternatives(tanks, parcels, 5);
   return {
     min_k: { id: 'Min Tanks', res: vMin },
     max_remaining: { id: 'Max Remaining', res: vMax },
     min_k_aggressive: { id: 'Min Tanks (Aggressive)', res: vAgg },
     single_wing: { id: 'Single-Wing (Ballast)', res: vWing },
+    min_k_keep_slops_small: { id: 'Min Tanks (Keep SLOPs for Small)', res: vKeepSlopsSmall },
     // Alternatives at same minimal k
     ...Object.fromEntries(altList.map((r, i) => [
       `min_k_alt_${i+1}`,
@@ -508,12 +510,14 @@ function fillVariantSelect() {
   function tankCount(res) {
     return new Set(res.allocations.map(a => a.tank_id)).size;
   }
-  const baseOrder = ['min_k','min_k_alt_1','min_k_alt_2','min_k_alt_3','min_k_alt_4','min_k_alt_5','single_wing','min_k_aggressive','max_remaining'];
+  const baseOrder = ['min_k','min_k_keep_slops_small','min_k_alt_1','min_k_alt_2','min_k_alt_3','min_k_alt_4','min_k_alt_5','single_wing','min_k_aggressive','max_remaining'];
   const order = baseOrder.filter(k => k in variantsCache).concat(Object.keys(variantsCache).filter(k => !baseOrder.includes(k)));
   const seen = new Map();
   const entries = [];
   for (const key of order) {
     const v = variantsCache[key];
+    const errs = v?.res?.diagnostics?.errors || [];
+    if (errs.length > 0) continue; // hide infeasible options
     const sig = planSig(v.res);
     if (seen.has(sig)) continue; // skip identical plan
     seen.set(sig, key);
@@ -538,13 +542,25 @@ function fillVariantSelect() {
   }
   if (!opts.find(o => o.key === selectedVariantKey)) selectedVariantKey = opts[0]?.key || 'min_k';
   variantSelect.innerHTML = opts.map(o => `<option value="${o.key}" ${o.key===selectedVariantKey?'selected':''}>${o.label}</option>`).join('');
+  if (opts.length === 0) {
+    // No viable options: show friendly reasons
+    const reasons = new Set();
+    Object.values(variantsCache).forEach(v => {
+      (v?.res?.diagnostics?.errors || []).forEach(e => reasons.add(e));
+    });
+    if (warnsEl) warnsEl.textContent = `No viable plan options. Reasons: ${Array.from(reasons).join(' | ')}`;
+  }
 }
 
 function computeAndRender() {
   variantsCache = computeVariants();
   fillVariantSelect();
-  const v = variantsCache[selectedVariantKey] || variantsCache['min_k'];
+  const v = variantsCache[selectedVariantKey];
   persistLastState();
+  if (!v || (v.res?.diagnostics?.errors || []).length > 0 || (variantSelect && variantSelect.options.length === 0)) {
+    renderSummaryAndSvg(null);
+    return;
+  }
   renderSummaryAndSvg(v.res);
 }
 
