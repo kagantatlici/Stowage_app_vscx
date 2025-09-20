@@ -60,6 +60,10 @@ th { text-align: left; color: var(--muted); font-weight: 600; }
 .pill { padding: 1px 6px; border-radius: 999px; border: 1px solid #33427a; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
+/* Sticky compute bar inside Cargo Input */
+.compute-bar { position: sticky; top: 0; z-index: 2; padding: 8px 0; background: linear-gradient(180deg, rgba(11,16,32,0.95), rgba(11,16,32,0)); border-bottom: 1px solid #1b254a; margin-bottom: 8px; }
+.compute-bar #btn-compute { width: 100%; font-weight: 600; }
+
 @media (max-width: 1100px) {
   .container { grid-template-columns: 1fr; }
   .ship { --ship-w: 92vw; }

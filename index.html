@@ -9,9 +9,6 @@
   <body>
     <header class="app-header">
       <h1>Tanker Stowage Planner — MVP</h1>
-      <div class="actions">
-        <button id="btn-compute">Compute Plan</button>
-      </div>
     </header>
     <main class="container">
       <section class="panel">
@@ -33,14 +30,21 @@
       </section>
       <section class="panel">
         <h2>Cargo Input</h2>
+        <div class="compute-bar"><button id="btn-compute">Run Stowage Options</button></div>
         <div id="parcel-editor"></div>
         <div class="parcel-actions">
           <button id="btn-add-parcel">Add Parcel</button>
         </div>
+        <div id="summary"></div>
+        <div id="legend" class="legend"></div>
+        <hr style="border: none; border-top: 1px solid #1b254a; margin: 12px 0;" />
+        <h3 style="margin:8px 0; font-size:14px;">Allocated Tanks</h3>
+        <div id="alloc-table"></div>
+        <h3 style="margin:12px 0 8px; font-size:14px;">Parcels Summary</h3>
+        <div id="parcel-table"></div>
       </section>
       <section class="panel">
         <h2>Distribution Result</h2>
-        <div id="summary"></div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
           <button id="btn-export-json">Export JSON</button>
           <label for="plan-variant" style="color:#9aa3b2; font-size:13px;">Plan Options</label>
@@ -50,12 +54,6 @@
         <div id="svg-container" class="svg-wrap" style="display:none;"></div>
         <div id="warnings" class="warn"></div>
         <!-- Reasoning trace hidden in UI -->
-        
-        <hr style="border: none; border-top: 1px solid #1b254a; margin: 12px 0;" />
-        <h3 style="margin:8px 0; font-size:14px;">Allocated Tanks</h3>
-        <div id="alloc-table"></div>
-        <h3 style="margin:12px 0 8px; font-size:14px;">Parcels Summary</h3>
-        <div id="parcel-table"></div>
       </section>
     </main>
     <script type="module" src="app.js"></script>

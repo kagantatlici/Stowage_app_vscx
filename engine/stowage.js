@@ -752,16 +752,16 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         if (!cand.fitsStrict && cand.fitsWithBand && bandEnabled && bandSlotsLeft > 0) {
           bandSlotsLeft -= 1;
           const pct = (V / t.volume_m3) * 100;
-          warnings.push(`Underfill band used on ${t.id}: ${pct.toFixed(1)}%`);
+          warnings.push(`Allowed underfill on ${t.id} (${pct.toFixed(1)}%) to fit ${p.name || p.id}.`);
           traceEntry.reason += `; underfill band used on ${t.id}`;
           bandUsedTankIds.add(t.id);
         }
-        warnings.push(`Single-wing load on ${t.id}: ship will list to one side; bring upright by ballasting the opposite side.`);
+        warnings.push(`Single-wing load on ${t.id}. Expect list; ballast the opposite side to correct.`);
         reasoning_trace.push(traceEntry);
         continue;
       }
       // No single-wing candidate; remain infeasible
-      errors.push(`Parcel ${p.name || p.id} cannot be placed with current tank symmetry and limits.`);
+      errors.push(`${p.name || p.id}: cannot be placed with current tank limits. Try increasing volume or lowering min% on a tank.`);
       reasoning_trace.push(traceEntry);
       continue;
     }

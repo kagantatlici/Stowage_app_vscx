@@ -397,9 +397,12 @@ function renderSummaryAndSvg(result) {
     `;
     legend.appendChild(item);
   });
-  // Insert summary above legend for vertical alignment with parcel list
-  if (layoutGrid && summaryEl) layoutGrid.appendChild(summaryEl);
-  if (layoutGrid) layoutGrid.appendChild(legend);
+  // Place legend under Cargo Input section
+  const legendContainer = document.getElementById('legend');
+  if (legendContainer) {
+    legendContainer.innerHTML = '';
+    legendContainer.appendChild(legend);
+  }
 
   // Only render tables when allocations exist (after compute)
   if (allocations.length > 0) {
@@ -544,12 +547,13 @@ function fillVariantSelect() {
   if (!opts.find(o => o.key === selectedVariantKey)) selectedVariantKey = opts[0]?.key || 'min_k';
   variantSelect.innerHTML = opts.map(o => `<option value="${o.key}" ${o.key===selectedVariantKey?'selected':''}>${o.label}</option>`).join('');
   if (opts.length === 0) {
-    // No viable options: show friendly reasons
+    // No viable options: show friendly reasons and tips
     const reasons = new Set();
     Object.values(variantsCache).forEach(v => {
       (v?.res?.diagnostics?.errors || []).forEach(e => reasons.add(e));
     });
-    if (warnsEl) warnsEl.textContent = `No viable plan options. Reasons: ${Array.from(reasons).join(' | ')}`;
+    const tips = 'Try increasing parcel volume, lowering a tank\'s min%, or reserving SLOPs for small parcels.';
+    if (warnsEl) warnsEl.textContent = `No viable plan options. ${Array.from(reasons).join(' | ')} Tip: ${tips}`;
   }
 }
 
