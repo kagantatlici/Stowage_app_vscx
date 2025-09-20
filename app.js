@@ -27,6 +27,19 @@ const btnLoadCfg = document.getElementById('btn-load-cfg');
 const btnDelCfg = document.getElementById('btn-del-cfg');
 const btnExportJson = document.getElementById('btn-export-json');
 const variantSelect = document.getElementById('plan-variant');
+const viewTabs = document.querySelectorAll('.view-tabs .tab');
+
+// View switching
+const LS_VIEW = 'stowage_view_v1';
+function setActiveView(view) {
+  document.querySelectorAll('.view').forEach(sec => {
+    const want = `view-${view}`;
+    sec.classList.toggle('active', sec.id === want);
+  });
+  viewTabs.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-view') === view));
+  localStorage.setItem(LS_VIEW, view);
+}
+viewTabs.forEach(btn => btn.addEventListener('click', () => setActiveView(btn.getAttribute('data-view'))));
 
 // Local storage helpers for configs and last state
 const LS_PRESETS = 'stowage_presets_v1';
@@ -624,6 +637,11 @@ btnAddCenter.addEventListener('click', () => {
 restoreLastState();
 refreshPresetSelect();
 render();
+// Restore last view or default to cargo
+try {
+  const v = localStorage.getItem(LS_VIEW) || 'cargo';
+  setActiveView(v);
+} catch {}
 
 // Config preset actions
 btnSaveCfg.addEventListener('click', () => {

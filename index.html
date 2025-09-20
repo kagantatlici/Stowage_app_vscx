@@ -11,7 +11,12 @@
       <h1>Tanker Stowage Planner — MVP</h1>
     </header>
     <main class="container">
-      <section class="panel">
+      <div class="view-tabs">
+        <button class="tab" data-view="config">Tank Config</button>
+        <button class="tab active" data-view="cargo">Cargo & Allocation</button>
+        <button class="tab" data-view="layout">Layout Plan</button>
+      </div>
+      <section id="view-config" class="panel view">
         <h2>Tank Editor</h2>
         <div id="tank-editor"></div>
         <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
@@ -28,7 +33,7 @@
           </div>
         </div>
       </section>
-      <section class="panel">
+      <section id="view-cargo" class="panel view active">
         <h2>Cargo Input</h2>
         <div class="compute-bar"><button id="btn-compute">Run Stowage Options</button></div>
         <div id="parcel-editor"></div>
@@ -44,7 +49,7 @@
         <div id="parcel-table"></div>
         <div id="warnings" class="warn"></div>
       </section>
-      <section class="panel">
+      <section id="view-layout" class="panel view">
         <h2>Distribution Result</h2>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
           <button id="btn-export-json">Export JSON</button>
