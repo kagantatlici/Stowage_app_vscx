@@ -761,7 +761,7 @@ function computePlanInternal(tanks, parcels, mode = 'min_k', policy = {}) {
         continue;
       }
       // No single-wing candidate; remain infeasible
-      errors.push(`${p.name || p.id}: cannot be placed with current tank limits. Try increasing volume or lowering min% on a tank.`);
+      errors.push(`${p.name || p.id}: cannot be placed with current tank limits.`);
       reasoning_trace.push(traceEntry);
       continue;
     }

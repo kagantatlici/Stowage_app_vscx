@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tanker Stowage Planner (MVP)</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <header class="app-header">
@@ -42,6 +42,7 @@
         <div id="alloc-table"></div>
         <h3 style="margin:12px 0 8px; font-size:14px;">Parcels Summary</h3>
         <div id="parcel-table"></div>
+        <div id="warnings" class="warn"></div>
       </section>
       <section class="panel">
         <h2>Distribution Result</h2>
@@ -52,10 +53,9 @@
         </div>
         <div id="layout-grid" class="layout-wrap"></div>
         <div id="svg-container" class="svg-wrap" style="display:none;"></div>
-        <div id="warnings" class="warn"></div>
         <!-- Reasoning trace hidden in UI -->
       </section>
     </main>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=4"></script>
   </body>
   </html>
