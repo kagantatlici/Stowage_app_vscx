@@ -224,7 +224,7 @@ function renderSummaryAndSvg(result) {
         ? 'Balanced'
         : `Warning imbalance ${(imbalance_pct||0).toFixed(2)}%${dir==='even'?'':` (list to ${dir})`}`;
       if (summaryEl) summaryEl.innerHTML = `
-        <div class="summary-bar" style="display:flex; flex-direction:column; gap:6px;">
+        <div class="summary-bar" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
           <div>Port <b>${(port_weight_mt||0).toFixed(2)}</b> MT</div>
           <div>${warnLine}</div>
           <div>Starboard <b>${(starboard_weight_mt||0).toFixed(2)}</b> MT</div>
@@ -440,7 +440,7 @@ function renderSummaryAndSvg(result) {
     capDiv.className = 'capacity-bar';
     capDiv.innerHTML = `
       <div class="cap-item"><span>Remaining Capacity</span><b>${cmaxFree.toFixed(0)} m³</b></div>
-      <div class="cap-item"><span>Unusable</span><b>${deadSpace.toFixed(0)} m³</b></div>
+      <div class="cap-item"><span>Unusable / Dead-Space on Tank Tops</span><b>${deadSpace.toFixed(0)} m³</b></div>
     `;
     if (summaryEl) summaryEl.appendChild(capDiv);
 

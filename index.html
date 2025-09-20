@@ -9,13 +9,18 @@
   <body>
     <header class="app-header">
       <h1>Tanker Stowage Planner — MVP</h1>
+      <div class="header-controls">
+        <div class="view-tabs">
+          <button class="tab" data-view="config">Tank Config</button>
+          <button class="tab active" data-view="cargo">Cargo & Allocation</button>
+          <button class="tab" data-view="layout">Layout Plan</button>
+        </div>
+        <div class="actions">
+          <button id="btn-compute" class="btn-primary">Run Stowage Options</button>
+        </div>
+      </div>
     </header>
     <main class="container">
-      <div class="view-tabs">
-        <button class="tab" data-view="config">Tank Config</button>
-        <button class="tab active" data-view="cargo">Cargo & Allocation</button>
-        <button class="tab" data-view="layout">Layout Plan</button>
-      </div>
       <section id="view-config" class="panel view">
         <h2>Tank Editor</h2>
         <div id="tank-editor"></div>
@@ -35,7 +40,6 @@
       </section>
       <section id="view-cargo" class="panel view active">
         <h2>Cargo Input</h2>
-        <div class="compute-bar"><button id="btn-compute">Run Stowage Options</button></div>
         <div id="parcel-editor"></div>
         <div class="parcel-actions">
           <button id="btn-add-parcel">Add Parcel</button>
