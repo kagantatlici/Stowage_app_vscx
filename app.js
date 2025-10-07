@@ -152,6 +152,85 @@ function buildVolumeMapFromJSON(json) {
   return volumeMap;
 }
 
+// Helpers to normalize tank ids from external names
+function normalizeCargoNameToId(name) {
+  if (!name) return null;
+  const s = String(name).toUpperCase().trim();
+  // COT n P/S/C
+  const mCot = /\bCOT\s*(\d+)\s*(P|S|C)\b/.exec(s);
+  if (mCot) {
+    const num = mCot[1];
+    const sideLetter = mCot[2];
+    const id = `COT${num}${sideLetter}`;
+    const side = sideLetter === 'P' ? 'port' : (sideLetter === 'S' ? 'starboard' : 'center');
+    return { id, side };
+  }
+  // SLOP variants (SLOP TK(P), Slop Tank 6 P, etc.)
+  if (/SLOP/.test(s)) {
+    let sideLetter = null;
+    const mSide = /(\(|\s)(P|S)(\)|\b)/.exec(s);
+    if (mSide) sideLetter = mSide[2];
+    if (!sideLetter) return null;
+    const id = sideLetter === 'P' ? 'SLOPP' : 'SLOPS';
+    const side = sideLetter === 'P' ? 'port' : 'starboard';
+    return { id, side };
+  }
+  return null;
+}
+
+function mapCargoArrayToTanks(cargoArr, defaults = { min_pct: 0.5, max_pct: 0.98 }) {
+  const out = [];
+  if (!Array.isArray(cargoArr)) return out;
+  const seen = new Set();
+  for (const row of cargoArr) {
+    const norm = normalizeCargoNameToId(row?.name);
+    if (!norm) continue; // skip non-COT non-SLOP items
+    const id = norm.id;
+    if (seen.has(id)) continue; // avoid duplicates
+    const volume = (typeof row.cap_m3 === 'number') ? row.cap_m3
+      : (typeof row.volume_m3 === 'number') ? row.volume_m3
+      : (typeof row.capacity_m3 === 'number') ? row.capacity_m3
+      : (typeof row.volume === 'number') ? row.volume
+      : undefined;
+    if (typeof volume !== 'number') continue;
+    out.push({ id, volume_m3: volume, min_pct: defaults.min_pct, max_pct: defaults.max_pct, included: true, side: norm.side });
+    seen.add(id);
+  }
+  return out;
+}
+
+function parseShipsFromExport(json) {
+  const ships = [];
+  const defaults = { min_pct: 0.5, max_pct: 0.98 };
+  const pushIfAny = (name, cargoArr) => {
+    const tanksArr = mapCargoArrayToTanks(cargoArr, defaults);
+    if (tanksArr.length > 0) ships.push({ name, tanks: tanksArr });
+  };
+  if (json && Array.isArray(json.ships)) {
+    for (const s of json.ships) {
+      const name = s?.ship?.name || s?.name || 'Ship';
+      const cargo = s?.tanks?.cargo || [];
+      pushIfAny(name, cargo);
+    }
+  } else if (json && Array.isArray(json)) {
+    // array of ship entries or array of cargo rows
+    if (json.length && json[0] && json[0].name && json[0].cap_m3 != null) {
+      pushIfAny('Imported Ship', json);
+    } else {
+      for (let i = 0; i < json.length; i++) {
+        const s = json[i];
+        const name = s?.ship?.name || s?.name || `Ship ${i+1}`;
+        const cargo = s?.tanks?.cargo || s?.cargo || [];
+        pushIfAny(name, cargo);
+      }
+    }
+  } else if (json && json.tanks && Array.isArray(json.tanks.cargo)) {
+    const name = json?.ship?.name || json?.name || 'Imported Ship';
+    pushIfAny(name, json.tanks.cargo);
+  }
+  return ships;
+}
+
 function renderTankEditor() {
   const rows = tanks.map((t, idx) => {
     return `<tr>
@@ -781,12 +860,46 @@ if (fileImportCfg) {
     try {
       const text = await f.text();
       const json = JSON.parse(text);
-      const vmap = buildVolumeMapFromJSON(json);
-      if (!vmap || vmap.size === 0) { alert('JSON içinde tanınan tank kapasitesi bulunamadı.'); return; }
-      tanks = tanks.map(t => vmap.has(t.id) ? { ...t, volume_m3: vmap.get(t.id) } : t);
-      persistLastState();
-      render();
-      alert('JSON dosyasından tank kapasiteleri içe aktarıldı.');
+      // Try multi-ship import first
+      const ships = parseShipsFromExport(json);
+      if (ships.length > 0) {
+        const presets = loadPresets();
+        const existingNames = new Set(Object.keys(presets));
+        const uniquify = (base) => {
+          let name = base;
+          let n = 2;
+          while (existingNames.has(name)) name = `${base} (${n++})`;
+          existingNames.add(name);
+          return name;
+        };
+        const importedNames = [];
+        for (const s of ships) {
+          const name = uniquify(String(s.name || 'Ship'));
+          const clean = s.tanks.map(t => ({ id: t.id, volume_m3: t.volume_m3, min_pct: t.min_pct, max_pct: t.max_pct, included: t.included, side: t.side }));
+          presets[name] = clean;
+          importedNames.push(name);
+        }
+        savePresets(presets);
+        refreshPresetSelect();
+        // Optionally set the first imported ship as current
+        if (importedNames.length > 0) {
+          const firstName = importedNames[0];
+          cfgSelect.value = firstName;
+          cfgNameInput.value = firstName;
+          tanks = presets[firstName].map(t => ({ ...t }));
+          persistLastState();
+          render();
+        }
+        alert(`${importedNames.length} gemi konfigürasyonu içe aktarıldı: ${importedNames.join(', ')}`);
+      } else {
+        // Fallback: update only capacities using id mapping
+        const vmap = buildVolumeMapFromJSON(json);
+        if (!vmap || vmap.size === 0) { alert('JSON içinde tanınan tank kapasitesi bulunamadı.'); return; }
+        tanks = tanks.map(t => vmap.has(t.id) ? { ...t, volume_m3: vmap.get(t.id) } : t);
+        persistLastState();
+        render();
+        alert('JSON dosyasından tank kapasiteleri içe aktarıldı.');
+      }
     } catch (e) {
       console.warn('Import error', e);
       alert('JSON import başarısız. Dosyayı kontrol edin.');
