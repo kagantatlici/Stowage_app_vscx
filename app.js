@@ -848,6 +848,21 @@ btnSaveCfg.addEventListener('click', () => {
     }
   });
 });
+
+// Change selected preset -> immediately load into Tank Editor
+if (cfgSelect) {
+  cfgSelect.addEventListener('change', () => {
+    const name = cfgSelect.value;
+    if (!name) return;
+    const presets = loadPresets();
+    const conf = presets[name];
+    if (!Array.isArray(conf)) return;
+    tanks = conf.map(t => ({ ...t }));
+    try { cfgNameInput.value = name; } catch {}
+    persistLastState();
+    render();
+  });
+}
 // Load now imports JSON via file chooser and updates only capacities
 btnLoadCfg.addEventListener('click', () => {
   if (fileImportCfg) fileImportCfg.click();
