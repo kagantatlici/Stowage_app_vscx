@@ -24,7 +24,9 @@ const cfgNameInput = document.getElementById('cfg-name');
 const cfgSelect = document.getElementById('cfg-select');
 const btnSaveCfg = document.getElementById('btn-save-cfg');
 const btnLoadCfg = document.getElementById('btn-load-cfg');
+const btnExportCfg = document.getElementById('btn-export-cfg');
 const btnDelCfg = document.getElementById('btn-del-cfg');
+const fileImportCfg = document.getElementById('file-import-cfg');
 const btnExportJson = document.getElementById('btn-export-json');
 const variantSelect = document.getElementById('plan-variant');
 const viewTabs = document.querySelectorAll('.view-tabs .tab');
@@ -61,6 +63,7 @@ function persistLastState() {
   localStorage.setItem(LS_LAST, JSON.stringify({ tanks, parcels }));
 }
 function restoreLastState() {
+  let restored = false;
   try {
     const raw = localStorage.getItem(LS_LAST);
     if (!raw) return;
@@ -68,8 +71,85 @@ function restoreLastState() {
     if (Array.isArray(t) && Array.isArray(p)) {
       tanks = t;
       parcels = p;
+      restored = true;
     }
   } catch {}
+  return restored;
+}
+
+// Save current tank configuration to project folder via dev server API
+async function saveConfigToFile(filename, name, currentTanks) {
+  try {
+    const res = await fetch('/api/save-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, name, tanks: currentTanks })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.warn('Save to file failed:', e);
+    return null;
+  }
+}
+
+// Load only capacities (volume_m3) from ships_export_2025-10-05.json if present
+async function tryLoadCapacitiesFromExport() {
+  try {
+    const res = await fetch('/ships_export_2025-10-05.json', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const json = await res.json();
+    /** Build a map id -> volume_m3 from flexible shapes */
+    const volumeMap = new Map();
+    const consumeTankArr = (arr) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(item => {
+        if (!item) return;
+        const id = item.id || item.tank_id;
+        const vol = (typeof item.volume_m3 === 'number') ? item.volume_m3
+          : (typeof item.capacity_m3 === 'number') ? item.capacity_m3
+          : (typeof item.volume === 'number') ? item.volume
+          : undefined;
+        if (id && typeof vol === 'number') volumeMap.set(id, vol);
+      });
+    };
+    if (Array.isArray(json)) consumeTankArr(json);
+    else if (json && Array.isArray(json.tanks)) consumeTankArr(json.tanks);
+    else if (json && Array.isArray(json.ships) && json.ships[0] && Array.isArray(json.ships[0].tanks)) consumeTankArr(json.ships[0].tanks);
+
+    if (volumeMap.size === 0) return false;
+    // Update only volumes, preserve other fields
+    tanks = tanks.map(t => volumeMap.has(t.id) ? { ...t, volume_m3: volumeMap.get(t.id) } : t);
+    persistLastState();
+    render();
+    try { alert('Capacities loaded from ships_export_2025-10-05.json'); } catch {}
+    return true;
+  } catch (e) {
+    console.warn('Capacity import failed:', e);
+    return false;
+  }
+}
+
+// Build volume map from flexible JSON shapes
+function buildVolumeMapFromJSON(json) {
+  const volumeMap = new Map();
+  const consumeTankArr = (arr) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach(item => {
+      if (!item) return;
+      const id = item.id || item.tank_id;
+      const vol = (typeof item.volume_m3 === 'number') ? item.volume_m3
+        : (typeof item.capacity_m3 === 'number') ? item.capacity_m3
+        : (typeof item.volume === 'number') ? item.volume
+        : undefined;
+      if (id && typeof vol === 'number') volumeMap.set(id, vol);
+    });
+  };
+  if (Array.isArray(json)) consumeTankArr(json);
+  else if (json && Array.isArray(json.tanks)) consumeTankArr(json.tanks);
+  else if (json && Array.isArray(json.ships) && json.ships[0] && Array.isArray(json.ships[0].tanks)) consumeTankArr(json.ships[0].tanks);
+  return volumeMap;
 }
 
 function renderTankEditor() {
@@ -634,8 +714,26 @@ btnAddCenter.addEventListener('click', () => {
 });
 
 // Initial render
-restoreLastState();
+const restored = restoreLastState();
 refreshPresetSelect();
+
+function autoLoadFirstPresetIfExists() {
+  const presets = loadPresets();
+  const names = Object.keys(presets).sort((a,b)=>a.localeCompare(b));
+  if (names.length === 0) return false;
+  const name = names[0];
+  const conf = presets[name];
+  if (!Array.isArray(conf)) return false;
+  tanks = conf.map(t => ({ ...t }));
+  try { cfgSelect.value = name; cfgNameInput.value = name; } catch {}
+  persistLastState();
+  return true;
+}
+
+if (!restored) {
+  autoLoadFirstPresetIfExists();
+}
+
 render();
 // Restore last view or default to cargo
 try {
@@ -657,17 +755,68 @@ btnSaveCfg.addEventListener('click', () => {
   cfgSelect.value = name;
   // remember the name in the input for clarity
   cfgNameInput.value = name;
+  // Also save to a JSON file in project folder via dev server
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth()+1).padStart(2,'0');
+  const d = String(today.getDate()).padStart(2,'0');
+  const defaultFile = `ships_export_${y}-${m}-${d}.json`;
+  saveConfigToFile(defaultFile, name, clean).then((resp) => {
+    if (resp && resp.ok) {
+      console.log('Saved to', resp.filename);
+    } else {
+      console.log('Local file save not available (static hosting?)');
+    }
+  });
 });
+// Load now imports JSON via file chooser and updates only capacities
 btnLoadCfg.addEventListener('click', () => {
-  const name = cfgSelect.value;
-  if (!name) return;
-  const presets = loadPresets();
-  const conf = presets[name];
-  if (!Array.isArray(conf)) return;
-  tanks = conf.map(t => ({ ...t }));
-  persistLastState();
-  render();
+  if (fileImportCfg) fileImportCfg.click();
 });
+
+if (fileImportCfg) {
+  fileImportCfg.addEventListener('change', async () => {
+    const f = fileImportCfg.files && fileImportCfg.files[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const json = JSON.parse(text);
+      const vmap = buildVolumeMapFromJSON(json);
+      if (!vmap || vmap.size === 0) { alert('JSON içinde tanınan tank kapasitesi bulunamadı.'); return; }
+      tanks = tanks.map(t => vmap.has(t.id) ? { ...t, volume_m3: vmap.get(t.id) } : t);
+      persistLastState();
+      render();
+      alert('JSON dosyasından tank kapasiteleri içe aktarıldı.');
+    } catch (e) {
+      console.warn('Import error', e);
+      alert('JSON import başarısız. Dosyayı kontrol edin.');
+    } finally {
+      fileImportCfg.value = '';
+    }
+  });
+}
+
+// Export Config: download current tanks as JSON
+if (btnExportCfg) {
+  btnExportCfg.addEventListener('click', () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth()+1).padStart(2,'0');
+    const d = String(today.getDate()).padStart(2,'0');
+    const filename = `ships_export_${y}-${m}-${d}.json`;
+    const clean = tanks.map(t => ({ id: t.id, volume_m3: t.volume_m3, min_pct: t.min_pct, max_pct: t.max_pct, included: t.included, side: t.side }));
+    const payload = { saved_at: today.toISOString(), name: (cfgNameInput.value || '').trim() || null, tanks: clean };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
 btnDelCfg.addEventListener('click', () => {
   const name = cfgSelect.value;
   if (!name) return;
